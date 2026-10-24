@@ -4,15 +4,16 @@ import urllib.request
 from bs4 import BeautifulSoup
 
 # 预设所有年份目录页与精选页，确保 2014-2026 全量收录
+BASE = "https://" + "wang54.blogspot.com"
 SEED_URLS = [
-    "https://wang54.blogspot.com/2020/01/2020.html",       # 25-26年
-    "https://wang54.blogspot.com/2023/03/20232024.html",   # 23-24年
-    "https://wang54.blogspot.com/2022/01/20212022.html",   # 21-22年
-    "https://wang54.blogspot.com/2020/01/20192020.html",   # 19-20年
-    "https://wang54.blogspot.com/2020/01/20172018.html",   # 17-18年
-    "https://wang54.blogspot.com/2020/01/20152016.html",   # 15-16年
-    "https://wang54.blogspot.com/2020/01/2014.html",       # 2014年前
-    "https://wang54.blogspot.com/2015/09/blog-post_72.html" # 文章精选
+    BASE + "/2020/01/2020.html",
+    BASE + "/2023/03/20232024.html",
+    BASE + "/2022/01/20212022.html",
+    BASE + "/2020/01/20192020.html",
+    BASE + "/2020/01/20172018.html",
+    BASE + "/2020/01/20152016.html",
+    BASE + "/2020/01/2014.html",
+    BASE + "/2015/09/blog-post_72.html",
 ]
 def fetch_html(url):
     req = urllib.request.Request(
