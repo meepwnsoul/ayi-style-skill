@@ -1,9 +1,9 @@
 import json
+import re
 import time
 import urllib.request
 from bs4 import BeautifulSoup
 
-# 预设所有年份目录页与精选页，确保 2014-2026 全量收录
 BASE = "https://" + "wang54.blogspot.com"
 SEED_URLS = [
     BASE + "/2020/01/2020.html",
@@ -15,53 +15,63 @@ SEED_URLS = [
     BASE + "/2020/01/2014.html",
     BASE + "/2015/09/blog-post_72.html",
 ]
+
+def norm_url(u):
+    if not u:
+        return ""
+    u = u.split('#')[0].split('?')[0].strip()
+    return u.replace("http://", "https://")
+
 def fetch_html(url):
     req = urllib.request.Request(
-        url, 
+        url,
         headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
         return resp.read().decode('utf-8', errors='ignore')
 
-def main():
-    print("1. 正在扫描主导航栏，获取所有年份目录页...")
-    year_pages = set(SEED_URLS)
-    try:
-        main_soup = BeautifulSoup(fetch_html(SEED_URLS[0]), 'html.parser')
-        for a in main_soup.select('a[href*="wang54.blogspot.com"]'):
-            href = a.get('href', '').split('#')[0]
-            text = a.get_text(strip=True)
-            if any(k in text for k in ['年', '精选']):
-                year_pages.add(href)
-    except Exception as e:
-        print(f"读取主导航失败: {e}")
+def clean_article_text(raw_text):
+    # 截断每篇文章底部自带的“打赏二维码”及“王五四文章精选”目录尾巴
+    for marker in ["打赏王五四的二维码", "王五四文章精选：", "敬告转发的公众号"]:
+        if marker in raw_text:
+            raw_text = raw_text.split(marker)[0]
+    return raw_text.strip()
 
-    print(f"共发现 {len(year_pages)} 个目录索引页，开始提取文章链接...")
+def main():
+    year_pages = {norm_url(u) for u in SEED_URLS}
+    print(f"1. 开始扫描 {len(year_pages)} 个历年目录页提取文章链接...")
+    
     article_links = {}
     for page_url in sorted(year_pages):
         print(f" -> 正在扫描目录: {page_url}")
         try:
             soup = BeautifulSoup(fetch_html(page_url), 'html.parser')
-            for a in soup.select('.post-body a[href*="wang54.blogspot.com"]'):
-                href = a.get('href', '').split('#')[0]
-                title = a.get_text(strip=True)
-                if href and title and href not in year_pages and len(title) > 2:
+            for a in soup.select('a[href*="wang54.blogspot.com"]'):
+                href = norm_url(a.get('href', ''))
+                title = a.get_text(" ", strip=True)
+                # 排除目录页自身、导航链接和非文章页
+                if (href and href not in year_pages 
+                    and re.search(r'/\d{4}/\d{2}/', href) 
+                    and len(title) > 3
+                    and not any(k in title for k in ['交流群', '年', '文章精选', '较新的博文', '较早的博文'])):
                     article_links[href] = title
         except Exception as e:
             print(f"跳过目录 {page_url}: {e}")
 
-    print(f"2. 共发现 {len(article_links)} 篇独立文章，开始抓取正文...")
+    print(f"2. 共提取到 {len(article_links)} 篇独立文章，开始抓取并清洗正文...")
     saved_count = 0
     with open("articles.jsonl", "w", encoding="utf-8") as f:
         for idx, (url, title) in enumerate(article_links.items(), 1):
             try:
                 art_soup = BeautifulSoup(fetch_html(url), 'html.parser')
-                body = art_soup.select_one('.post-body')
-                if not body:
+                # 取页面上字数最多的 post-body（即为文章主正文）
+                bodies = art_soup.select('.post-body')
+                if not bodies:
                     continue
-                text = body.get_text("\n", strip=True)
-                # 过滤掉纯目录或过短无效页
-                if len(text) > 150:
+                main_body = max(bodies, key=lambda b: len(b.get_text()))
+                text = clean_article_text(main_body.get_text("\n", strip=True))
+                
+                if len(text) > 200:
                     record = {
                         "title": title,
                         "url": url,
@@ -70,11 +80,11 @@ def main():
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
                     saved_count += 1
                     print(f"[{idx}/{len(article_links)}] 已收录: {title} ({len(text)}字)")
-                time.sleep(0.3)
+                time.sleep(0.2)
             except Exception as e:
                 print(f"[{idx}/{len(article_links)}] 抓取跳过 {title}: {e}")
 
-    print(f"全部完成！共成功收录 {saved_count} 篇原文至 articles.jsonl")
+    print(f"全部完成！共成功收录 {saved_count} 篇纯净原文至 articles.jsonl")
 
 if __name__ == "__main__":
     main()
