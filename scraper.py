@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import urllib.error
 import urllib.request
 from bs4 import BeautifulSoup
 
@@ -33,13 +34,27 @@ def norm_url(u):
     return u
 
 
-def fetch_html(url):
+def fetch_html(url, retries=5):
     req = urllib.request.Request(
         url,
         headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return resp.read().decode('utf-8', errors='ignore')
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                return resp.read().decode('utf-8', errors='ignore')
+        except urllib.error.HTTPError as e:
+            # Blogger 对 GitHub Actions 的 IP 限流较严，429/5xx 退避后重试
+            if e.code not in (429, 500, 502, 503, 504) or attempt == retries:
+                raise
+            ra = e.headers.get('Retry-After') if e.headers else None
+            wait = int(ra) if ra and ra.isdigit() else min(10 * 2 ** attempt, 120)
+            print(f"    {e.code}，{wait}s 后重试 ({attempt + 1}/{retries})")
+            time.sleep(wait)
+        except (urllib.error.URLError, TimeoutError) as e:
+            if attempt == retries:
+                raise
+            time.sleep(5 * (attempt + 1))
 
 
 def clean_title(t):
@@ -80,6 +95,7 @@ def main():
                     article_links[href] = title
                     found += 1
         print(f"    找到 {found} 个新链接")
+        time.sleep(2)
 
     print(f"2. 共提取到 {len(article_links)} 篇独立文章，开始抓取并清洗正文...")
     if not article_links:
@@ -108,7 +124,7 @@ def main():
                     print(f"[{idx}/{len(article_links)}] 正文过短跳过: {title} ({len(text)}字)")
             except Exception as e:
                 print(f"[{idx}/{len(article_links)}] 抓取跳过 {title}: {e}")
-            time.sleep(0.3)
+            time.sleep(1)
 
     print(f"全部完成！共成功收录 {saved_count} 篇原文至 articles.jsonl")
 
