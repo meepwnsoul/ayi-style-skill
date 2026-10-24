@@ -1,0 +1,36 @@
+name: Auto Scrape Articles
+
+on:
+  workflow_dispatch: # 允许在网页上手动点击按钮触发
+  push:
+    paths:
+      - 'scraper.py'
+
+permissions:
+  contents: write
+
+jobs:
+  scrape-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install beautifulsoup4
+
+      - name: Run scraper
+        run: python scraper.py
+
+      - name: Commit and push articles.jsonl
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add articles.jsonl
+          git diff --staged --quiet || git commit -m "data: 自动抓取并更新历史文章语料库 articles.jsonl"
+          git push
